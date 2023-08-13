@@ -1,0 +1,154 @@
+#include <Arduino.h>
+#include <driver/ledc.h>
+
+//Variables para los botones
+const int LEFT = 33; //Pin para el botón izquierdo
+const int RIGHT = 26; //Pin para el botón derecho
+const int B3 = 23; //Botón para cambiar por los diferentes switch cases 
+const int BRIGHT = 32; //Botón para modificar el brillo 
+
+//Variables para los LEDs
+const int RED = 15; //Case 2
+const int GREEN = 18; //Case 0 
+const int YELLOW = 13; //Case 1 
+
+//Canales para los LEDs con su correspondiente color 
+const int redChannel = 0; //Case 2
+const int greenChannel = 1; //Case 0
+const int yellowChannel = 2; //Case 1 
+
+//Variables para el control del servo motor
+const int servoChannel = 7; //Canal para el servo motor
+const int servoPin = 2; //Pin del servo motor
+const int angleStep = 5; //Tamaño del paso para el cambio de ángulo
+
+//Variables generales
+int angle = 0; //Ángulo/posición inicial del servo (0: Verde, 1: Amarillo, 2: Rojo)
+int selectedColor = 0; //Variable para guardar el color seleccionado 
+int brightness = 0; //Variable para guardar el valor del brillo entre 0 - 255
+
+//Posición establecida del servo por color de LED
+const int servoPositionGreen = 9; //Posición del servo para el LED verde
+const int servoPositionYellow = 13; //Posición del servo para el LED amarillo
+const int servoPositionRed = 17; //Posición del servo para el LED rojo
+
+void setup() {
+  //Botones con resistencias de pull-up internas 
+  pinMode(LEFT, INPUT_PULLUP);
+  pinMode(RIGHT, INPUT_PULLUP);
+  pinMode(B3, INPUT_PULLUP);
+  pinMode(BRIGHT, INPUT_PULLUP);
+
+  pinMode(RED, OUTPUT); 
+  pinMode(GREEN, OUTPUT); 
+  pinMode(YELLOW, OUTPUT);
+
+  //Configuración de los canales PWM para los LEDs y servo motor 
+  ledcSetup(redChannel, 5000, 8); //Canal 0, frecuencia de 5kHz, resolución de 8-bits (0-255)
+  ledcSetup(greenChannel, 5000, 8); //Canal 1, frecuencia de 5kHz, resolución de 8-bits (0-255)
+  ledcSetup(yellowChannel, 5000, 8); //Canal 2, frecuencia de 5kHz, resolución de 8-bits (0-255)
+  ledcSetup(servoChannel, 50, 16); //Canal 7, frecuencia de 50Hz, resolución de 16-bits (0-65535) 
+
+  ledcAttachPin(RED, redChannel); 
+  ledcAttachPin(GREEN, greenChannel); 
+  ledcAttachPin(YELLOW, yellowChannel); 
+  ledcAttachPin(servoPin, servoChannel); 
+  
+  //Inicialización de los LEDs
+  ledcWrite(redChannel, 0);
+  ledcWrite(greenChannel, 0);
+  ledcWrite(yellowChannel, 0);
+
+  //Inicializando la posición inicial
+  ledcWrite(servoChannel, map(angle, 0, 180, 0, 65535));
+  delay(1000); //Tiempo de espera de 1 segundo para la inicialización 
+
+  Serial.begin(115200); 
+}
+
+void loop() {
+  // Incremento en selectedColor cuando B3 es presionado
+  if (digitalRead(B3) == LOW) {
+    selectedColor = (selectedColor + 1) % 4;
+    delay(200);
+  }
+
+  // Ajuste del brillo con BRIGHT
+  if (digitalRead(BRIGHT) == LOW) {
+    brightness += 10; // Incremento del brillo
+    if (brightness >= 255) {
+      brightness = 0;
+    }
+    delay(200);
+  }
+
+  switch (selectedColor) {
+    case 0: // Green Channel
+      ledcWrite(redChannel, 0);
+      ledcWrite(yellowChannel, 0);
+      ledcWrite(greenChannel, brightness);
+      ledcWrite(servoChannel, map(servoPositionGreen, 0, 180, 0, 65535));
+      break;
+    case 1: // Yellow Channel
+      ledcWrite(redChannel, 0);
+      ledcWrite(greenChannel, 0);
+      ledcWrite(yellowChannel, brightness);
+      ledcWrite(servoChannel, map(servoPositionYellow, 0, 180, 0, 65535));
+      break;
+    case 2: // Red Channel
+      ledcWrite(greenChannel, 0);
+      ledcWrite(yellowChannel, 0);
+      ledcWrite(redChannel, brightness);
+      ledcWrite(servoChannel, map(servoPositionRed, 0, 180, 0, 65535));
+      break;
+    case 3: // Servo Motor
+      int servoDutyCycle = map(angle, 0, 180, 0, 65535);
+
+      if (digitalRead(LEFT) == LOW) {
+        if (angle >= 0 && angle <= 180) {
+          angle += angleStep;
+          if (angle > 180) {
+            angle = 180;
+          }
+        }
+        //Serial.println("Ángulo incrementado: "+String(angle));
+        servoDutyCycle = map(angle, 0, 180, 0, 65535);
+        ledcWrite(servoChannel, servoDutyCycle);
+        delay(100);
+      }
+
+      if (digitalRead(RIGHT) == LOW) {
+        if (angle > 0 && angle <= 180) {
+          angle -= angleStep;
+          if (angle < 0) {
+            angle = 0;
+          }
+        }
+        //Serial.println("Ángulo disminuido: "+String(angle));
+        servoDutyCycle = map(angle, 0, 180, 0, 65535);
+        ledcWrite(servoChannel, servoDutyCycle);
+        delay(100);
+      }
+
+      ledcWrite(servoChannel, map(angle, 0, 180, 0, 65535));
+      //Actualiza los estados de los LEDs acorde a la posición del servo de modo que si el ángulo se encuentra dentro del rango definido por estos umbrales,
+      //los LEDs correspondientes se enciende al ajustar su nivel de brillo mediante el botón BRIGHT, mientras que los demás están apagados.
+      if (angle >= servoPositionGreen && angle < servoPositionYellow) {
+        ledcWrite(redChannel, 0);
+        ledcWrite(yellowChannel, 0);
+        ledcWrite(greenChannel, brightness);
+      } else if (angle >= servoPositionYellow && angle < servoPositionRed) {
+        ledcWrite(greenChannel, 0);
+        ledcWrite(yellowChannel, brightness);
+        ledcWrite(redChannel, 0);
+      } else if (angle >= servoPositionRed) {
+        ledcWrite(greenChannel, 0);
+        ledcWrite(yellowChannel, 0);
+        ledcWrite(redChannel, brightness);
+       }
+       break;
+  }
+  delay(100);
+}
+
+
